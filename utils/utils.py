@@ -1,6 +1,5 @@
 import os
 import yaml
-from tensorflow.keras.utils import load_img, img_to_array
 import numpy as np
 
 
@@ -15,14 +14,17 @@ def validate_config(config):
     config : dict
         Experiment settings as a Python dict.
     """
-    if "seed" not in config:
-        raise ValueError("Missing experiment seed")
-
     if "data" not in config:
         raise ValueError("Missing experiment data")
 
-    if "directory" not in config["data"]:
+    if "train_csv_directory" not in config["data"]:
         raise ValueError("Missing experiment training data")
+
+    if "val_csv_directory" not in config["data"]:
+        raise ValueError("Missing experiment validation data")
+    
+    if "test_csv_directory" not in config["data"]:
+        raise ValueError("Missing experiment testing data")
 
 
 def load_config(config_file_path):
@@ -51,113 +53,57 @@ def load_config(config_file_path):
     return config
 
 
-def get_class_names(config):
+def get_class_number(config, df):
     """
-    It's not always easy to track how Keras maps our dataset classes to
-    the model outputs.
-    Given an image, the model output will be a 1-D vector with probability
-    scores for each class. The challenge is, how to map our class names to
-    each score in the output vector.
-    We will use this function to provide a class order to Keras and keep
-    consistency between training and evaluation.
+    Takes as input the experiment configuration as a dict and a dataframe and get the number of classes
 
     Parameters
     ----------
     config : dict
-        Experiment settings as Python dict.
-
-    Returns
-    -------
-    classes : list
-        List of classes as string.
-        E.g. ['AM General Hummer SUV 2000', 'Buick Verano Sedan 2012',
-                'FIAT 500 Abarth 2012', 'Jeep Patriot SUV 2012',
-                'Acura Integra Type R 2001', ...]
+        Experiment settings as a Python dict.
+    
+    df : dataframe
+        Dataframe containing the data columns with the scale and movement classes
     """
-    return sorted(os.listdir(os.path.join(config["data"]["directory"])))
+    scale_class_num = len(df[config['data']['y_col_scale']].unique())
+    movement_class_num = len(df[config['data']['y_col_movement']].unique())
+
+    return scale_class_num, movement_class_num
 
 
-def walkdir(folder):
+def predict_from_folder(model, test_data_gen, scale_names,move_names):
     """
-    Walk through all the files in a directory and its subfolders.
-
+    Gets predictions based on a data_generator based on a model
+ 
     Parameters
     ----------
-    folder : str
-        Path to the folder you want to walk.
+    model : str
+        Full path to .h5 model file.
+        E.g: `/home/app/src/experiments/exp_003/model.09-0.5953.h5`
 
     Returns
     -------
-        For each file found, yields a tuple having the path to the file
-        and the file name.
+    prediction : array
+        Returns most likely scale and movement label, as well as their likelyhood
     """
-    for dirpath, _, files in os.walk(folder):
-        for filename in files:
-            yield (dirpath, filename)
+    scale_preds = np.array([])
+    move_preds = np.array([])
+    scale_tests = np.array([])
+    move_tests = np.array([])
 
+    for ims, batch_labels in test_data_gen:
+        
+        scale_pred, move_pred = model.predict(ims)
+        scale_preds = np.concatenate([scale_preds, np.argmax(scale_pred,axis = -1)]).astype('int')
+        move_preds = np.concatenate([move_preds, np.argmax(move_pred,axis = -1)]).astype('int')
+        
+        scale_test, move_test = batch_labels
+        scale_tests = np.append(scale_tests,np.argmax(scale_test, axis=-1)).astype('int')
+        move_tests = np.append(move_tests,np.argmax(move_test, axis=-1)).astype('int')
 
-def predict_from_folder(folder, model, input_size, class_names):
-    """
-    Walk through all the image files in a directory, loads them, applies
-    the corresponding pre-processing and sends to the model to get
-    predictions.
+    scale_preds = [scale_names[id] for id in scale_preds]
+    scale_tests = [scale_names[id] for id in scale_tests]
+    move_preds = [move_names[id] for id in move_preds]
+    move_tests = [move_names[id] for id in move_tests]
 
-    This function will also return the true label for each image, to do so,
-    the folder must be structured in a way in which images for the same
-    category are grouped into a folder with the corresponding class
-    name. This is the same data structure as we used for training our model.
-
-    Parameters
-    ----------
-    folder : str
-        Path to the folder you want to process.
-
-    model : keras.Model
-        Loaded keras model.
-
-    input_size : tuple
-        Keras model input size, we must resize the image to match these
-        dimensions.
-
-    class_names : list
-        List of classes as string. It allow us to map model output IDs to the
-        corresponding class name, e.g. 'Jeep Patriot SUV 2012'.
-
-    Returns
-    -------
-    predictions, labels : tuple
-        It will return two lists:
-            - predictions: having the list of predicted labels by the model.
-            - labels: is the list of the true labels, we will use them to
-                      compare against model predictions.
-    """
-    # Use keras.utils.load_img() to correctly load the image and
-    # keras.utils.img_to_array() to convert it to the format needed
-    # before sending it to our model.
-    # You can use os.walk() or walkdir() to iterate over the files in the
-    # folder.
-    # Don't forget you must not return the raw model prediction. Model
-    # prediction will be a vector assigning probability scores to each
-    # class. You must take the position of the element in the vector with
-    # the highest probability and use that to get the corresponding class
-    # name from `class_names` list.
-    # TODO
-    predictions_list = []
-    classes_list =[]
-    for (dirpath, file_name) in walkdir(folder):
-        full_path = os.path.join(dirpath, file_name)
-        image = load_img(full_path, target_size=input_size) # Use keras.utils.load_img() to load image
-        image_array = img_to_array(image) # Use keras.utils.img_to_array() to convert it to array
-        image_array_batch = np.expand_dims(image_array, axis=0) # Create batch
-        preds = model.predict(image_array_batch)
-        predicted_class = class_names[np.argmax(preds)]
-        predictions_list.append(predicted_class)
-        pre_label = os.path.dirname(full_path)
-        label = os.path.basename(pre_label)
-        classes_list.append(label)
-
-
-    predictions = predictions_list
-    labels = classes_list
-
-    return predictions, labels
+    return scale_preds,scale_tests, move_preds, move_tests

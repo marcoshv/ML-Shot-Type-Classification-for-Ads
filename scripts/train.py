@@ -5,12 +5,15 @@ the experiment settings like dataset, model output folder, epochs,
 learning rate, data augmentation, etc.
 """
 import argparse
+import pandas as pd
 
 import tensorflow as tf
 from tensorflow import keras
 
-from models import resnet_50
+from models import video_classification_model
 from utils import utils
+from utils import data_aug
+from scripts.video_data_generator import VideoDataGenerator
 
 # Prevent tensorflow to allocate the entire GPU
 # https://www.tensorflow.org/api_docs/python/tf/config/experimental/set_memory_growth
@@ -31,7 +34,8 @@ OPTIMIZERS = {
 CALLBACKS = {
     "model_checkpoint": keras.callbacks.ModelCheckpoint,
     "tensor_board": keras.callbacks.TensorBoard,
-    "early_stopping": keras.callbacks.EarlyStopping,
+    "reduce_lr" : keras.callbacks.ReduceLROnPlateau,
+    "early_stopping": keras.callbacks.EarlyStopping
 }
 
 
@@ -86,6 +90,21 @@ def parse_callbacks(config):
 
     return callbacks
 
+def freeze_layers(config,model):
+    """
+    Freezes layers accourding to setting file
+
+    Parameters
+    ----------
+    config : str
+        Experiment settings.
+    """
+
+    if 'trainable' in config:
+        for layer_name, freeze in config['trainable'].items():
+             model.get_layer(name=layer_name).trainable = freeze
+    return model
+
 
 def main(config_file):
     """
@@ -99,49 +118,64 @@ def main(config_file):
     # Load configuration file, use utils.load_config()
     config = utils.load_config(config_file)
 
-    # Get the list of output classes
-    # We will use it to control the order of the output predictions from
-    # keras is consistent
-    class_names = utils.get_class_names(config)
+    # Build data augmentator, use data_aug.data_augmentator()
+    augmentation_seq = data_aug.data_augmentator(config)
 
-    # Check if number of classes is correct
-    if len(class_names) != config["model"]["classes"]:
-        raise ValueError(
-            "The number classes between your dataset and your model"
-            "doen't match."
-        )
+    # Load training  and validation dataset
+    train_df = pd.read_csv(config['data']['train_csv_directory'])
+    val_df = pd.read_csv(config['data']['val_csv_directory'])
 
-    # Load training dataset
-    # We will split train data in train/validation while training our
-    # model, keeping away from our experiments the testing dataset
-    train_ds = keras.preprocessing.image_dataset_from_directory(
-        subset="training",
-        class_names=class_names,
-        seed=config["seed"],
-        **config["data"],
+    # 
+    train_data_gen = VideoDataGenerator(
+        train_df = train_df,
+        file_col= config['data']['file_col'],
+        batch_size = config['data']['batch_size'],
+        y_col_scale= config['data']['y_col_scale'],
+        y_col_movement= config['data']['y_col_movement'],
+        mapping_scale= config['data']['mapping_scale'],
+        mapping_movement= config['data']['mapping_movement'],
+        max_frames= config['data']['max_frames'],
+        img_size= config['data']['img_size'],
+        augmentation_seq = augmentation_seq
     )
-    val_ds = keras.preprocessing.image_dataset_from_directory(
-        subset="validation",
-        class_names=class_names,
-        seed=config["seed"],
-        **config["data"],
+
+    val_data_gen = VideoDataGenerator(
+        val_df = val_df,
+        file_col= config['data']['file_col'],
+        batch_size = config['data']['batch_size'],
+        y_col_scale= config['data']['y_col_scale'],
+        y_col_movement= config['data']['y_col_movement'],
+        mapping_scale= config['data']['mapping_scale'],
+        mapping_movement= config['data']['mapping_movement'],
+        max_frames= config['data']['max_frames'],
+        img_size= config['data']['img_size'],
+        augmentation_seq = augmentation_seq
     )
+
+    # get number of classes and check if they are equal to the number of classes declared in the model configuration, use utils.get_class_number()
+    scale_classes, move_classes = utils.get_class_number(config, train_df)
+    if scale_classes != config['model']['scale_classes']:
+        print(f'Scale clases quantity from config file dont match the database ({scale_classes})')
+    
+    if move_classes != config['model']['move_classes']:
+        print(f'Scale clases quantity from config file dont match the database ({move_classes})')
 
     # Creates a Resnet50 model for finetuning
-    cnn_model = resnet_50.create_model(**config["model"])
-    print(cnn_model.summary())
+    model = video_classification_model.create_model(**config["model"])
+    model = freeze_layers(config,model)
+    print(model.summary())
 
     # Compile model, prepare for training
     optimizer = parse_optimizer(config)
-    cnn_model.compile(
+    model.compile(
         optimizer=optimizer,
         **config["compile"],
     )
 
     # Start training!
     callbacks = parse_callbacks(config)
-    cnn_model.fit(
-        train_ds, validation_data=val_ds, callbacks=callbacks, **config["fit"]
+    model.fit(
+        train_data_gen, validation_data=val_data_gen, callbacks=callbacks, **config["fit"]
     )
 
 

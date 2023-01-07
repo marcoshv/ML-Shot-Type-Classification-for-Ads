@@ -32,7 +32,7 @@ class VideoDataGenerator(keras.utils.Sequence):
     """
 
     def __init__(self, df, file_col=None, batch_size=4, shuffle=True, y_col_scale=None, y_col_movement= None,  
-                mapping_scale=None, mapping_movement=None, max_frames=120, img_size=224):
+                mapping_scale=None, mapping_movement=None, max_frames=120, img_size=224, augmentation_seq=False ):
         self.df = df.copy()
         self.file_col = file_col
         self.indices = self.df.index.to_list()
@@ -44,6 +44,7 @@ class VideoDataGenerator(keras.utils.Sequence):
         self.mapping_movement = mapping_movement
         self.max_frames = max_frames
         self.resize = (img_size, img_size)
+        self.augmentation_seq= augmentation_seq
 
     def __len__(self):
         """Return the number of batches in the data"""
@@ -64,6 +65,8 @@ class VideoDataGenerator(keras.utils.Sequence):
         X, mask = [], []
         for i in indices:
             v, m = load_video(self.df.loc[i, self.file_col], self.max_frames, self.resize)
+            if self.aug_sequence:
+                v = self.aug_sequence(v) 
             X.append(v)
             mask.append(m)
         y_scale = self.df.loc[indices, self.y_col_scale]

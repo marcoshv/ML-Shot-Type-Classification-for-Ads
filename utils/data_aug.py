@@ -1,47 +1,46 @@
-import tensorflow as tf
-def create_data_aug_layer(data_aug_layer):
+from vidaug import augmentors as va
+def data_augmentator(config):
     """
     Use this function to parse the data augmentation methods for the
     experiment and create the corresponding layers.
 
-    It will be mandatory to support at least the following three data
-    augmentation methods (you can add more if you want):
-        - `random_flip`: keras.layers.RandomFlip()
-        - `random_rotation`: keras.layers.RandomRotation()
-        - `random_zoom`: keras.layers.RandomZoom()
-
-    See https://tensorflow.org/tutorials/images/data_augmentation.
-
     Parameters
     ----------
-    data_aug_layer : dict
+    config : dict
         Data augmentation settings coming from the experiment YAML config
         file.
 
     Returns
     -------
-    data_augmentation : keras.Sequential
-        Sequential model having the data augmentation layers inside.
+    seq: arrays
+        augmentated frames.
     """
-    # Parse config and create layers
-    # You can use as a guide on how to pass config parameters to keras
-    # looking at the code in `scripts/train.py`
-    # TODO
-    # Append the data augmentation layers on this list
-    data_augmentation = tf.keras.Sequential()
-    if data_aug_layer is not None:
-        if "random_flip" in data_aug_layer:
-            random_flip = tf.keras.layers.RandomFlip(**data_aug_layer['random_flip'])
-            data_augmentation.add(random_flip)
-        if "random_rotation" in data_aug_layer:
-            random_rotation = tf.keras.layers.RandomRotation(**data_aug_layer["random_rotation"])
-            data_augmentation.add(random_rotation)
-        if "random_zoom" in data_aug_layer:
-            random_zoom = tf.keras.layers.RandomZoom(**data_aug_layer["random_zoom"])
-            data_augmentation.add(random_zoom)
-    
-    # Return a keras.Sequential model having the the new layers created
-    # Assign to `data_augmentation` variable
-    # TODO
-    
-    return data_augmentation
+    try:
+        st_video = lambda aug: va.Sometimes(config['data_augmentation']['video_prob'],aug)
+        st_flip = lambda aug: va.Sometimes(config['data_augmentation']['flip_prob'], aug) #float as probability
+        st_pepp_salt = lambda aug: va.Sometimes(config['data_augmentation']['pep_sal_prob'], aug) 
+        st_dist = lambda aug: va.Sometimes(config['data_augmentation']['distortion_prob'], aug)
+        st_geo = lambda aug: va.Sometimes(config['data_augmentation']['geometric_prob'], aug)
+
+        pepper_salt_seq = va.Sequential([ # randomly rotates the video with a degree randomly choosen from [-10, 10]  
+            va.Salt(50),  #number of real pixels
+            va.Pepper(50)
+        ])
+        distorsion_seq = va.OneOf([
+            va.ElasticTransformation(2,.5,0,mode='wrap'), # horizontally flip the video with 100% probability
+            va.PiecewiseAffineTransform(50,7,0.2)    #???
+        ])
+        geometric_seq = va.OneOf([
+            va.RandomTranslate(25,25), #moves image x, y pixels
+            va.RandomShear(.2,.2) #perspective
+        ])
+
+        seq = st_video(va.Sequential([
+            st_flip(va.HorizontalFlip()),
+            st_pepp_salt(pepper_salt_seq),
+            st_dist(distorsion_seq),
+            st_geo(geometric_seq)]
+            ))
+    except:
+        seq=False
+    return seq
