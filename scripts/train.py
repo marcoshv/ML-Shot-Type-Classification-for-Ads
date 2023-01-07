@@ -1,5 +1,5 @@
 """
-This script will be used for training our CNN. The only input argument it
+This script will be used for training our model. The only input argument it
 should receive is the path to our configuration file in which we define all
 the experiment settings like dataset, model output folder, epochs,
 learning rate, data augmentation, etc.
