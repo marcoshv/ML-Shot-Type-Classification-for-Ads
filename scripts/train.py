@@ -127,28 +127,30 @@ def main(config_file):
 
     # 
     train_data_gen = VideoDataGenerator(
-        train_df = train_df,
+        df = train_df,
         file_col= config['data']['file_col'],
         batch_size = config['data']['batch_size'],
+        shuffle = True,
         y_col_scale= config['data']['y_col_scale'],
         y_col_movement= config['data']['y_col_movement'],
         mapping_scale= config['data']['mapping_scale'],
         mapping_movement= config['data']['mapping_movement'],
         max_frames= config['data']['max_frames'],
-        img_size= config['data']['img_size'],
+        img_size= config['data']['image_size'],
         augmentation_seq = augmentation_seq
     )
 
     val_data_gen = VideoDataGenerator(
-        val_df = val_df,
+        df = val_df,
         file_col= config['data']['file_col'],
         batch_size = config['data']['batch_size'],
+        shuffle = True,
         y_col_scale= config['data']['y_col_scale'],
         y_col_movement= config['data']['y_col_movement'],
         mapping_scale= config['data']['mapping_scale'],
         mapping_movement= config['data']['mapping_movement'],
         max_frames= config['data']['max_frames'],
-        img_size= config['data']['img_size'],
+        img_size= config['data']['image_size'],
         augmentation_seq = augmentation_seq
     )
 

@@ -1,0 +1,11 @@
+--- summary_v2.py	2022-12-16 12:49:34.615675775 +0000
++++ /home/app/.local/lib/python3.8/site-packages/tensorboard/plugins/scalar/summary_v2.py	2022-12-16 12:47:47.263997852 +0000
+@@ -85,7 +85,7 @@
+         or tf.summary.summary_scope
+     )
+     with summary_scope(name, "scalar_summary", values=[data, step]) as (tag, _):
+-        tf.debugging.assert_scalar(data)
++#        tf.debugging.assert_scalar(data)
+         return tf.summary.write(
+             tag=tag,
+             tensor=tf.cast(data, tf.float32),

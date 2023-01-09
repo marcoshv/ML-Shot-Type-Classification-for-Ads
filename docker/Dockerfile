@@ -32,7 +32,4 @@ RUN pip3 install tensorflow==2.8.0
 # PyTorch CPU 1.10
 RUN pip3 install torch==1.10.0+cpu torchvision==0.11.0+cpu torchaudio==0.10.0 -f https://download.pytorch.org/whl/torch_stable.html
 
-# Detectron2 for PyTorch 1.10
-RUN pip3 install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cpu/torch1.10/index.html
-
 WORKDIR /home/app

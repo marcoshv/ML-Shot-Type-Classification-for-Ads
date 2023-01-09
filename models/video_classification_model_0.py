@@ -1,14 +1,16 @@
+from tensorflow.keras import layers
 from tensorflow.keras.applications.resnet import ResNet50
-import tensorflow as tf
+from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras import Model
+from tensorflow.keras.models import load_model
 from tensorflow.keras import regularizers
 
-def get_rnn(rnn_type,rnn_units,name):
+def get_rnn(rnn_type,rnn_units):
     RNN_TYPE = {
-        "gru": tf.keras.layers.GRU(rnn_units, return_sequences=False, name= name),
-        "lstm": tf.keras.layers.LSTM(rnn_units, return_sequences=False, name= name)
+        "gru": layers.GRU(rnn_units, return_sequences=False, name='X4_model_rnn'),
+        "lstm": layers.LSTM(rnn_units, return_sequences=False, name='X4_model_rnn')
     }
     return RNN_TYPE[rnn_type]
-
 
 def create_model(
     weights:str = "imagenet",
@@ -85,11 +87,11 @@ def create_model(
 
     # Create the model to be used for finetuning here!
     if weights == "imagenet":
-        input_l = tf.keras.layers.Input(shape=input_shape,dtype='float32', name='input_l')
+        input_l = layers.Input(shape=input_shape,dtype='float32', name='input_l')
 
-        mask_input = tf.keras.layers.Input((input_shape[0],), dtype="bool", name='mask_input')
+        mask_input = layers.Input((input_shape[0],), dtype="bool", name='mask_input')
 
-        X1_preprocess = tf.keras.applications.resnet50.preprocess_input(input_l) # Change pixels interval from [0, 255] to [0, 1]
+        X1_preprocess = preprocess_input(input_l) # Change pixels interval from [0, 255] to [0, 1]
 
         # Create the corresponding core CNN model
         model_cnn = ResNet50(
@@ -98,55 +100,36 @@ def create_model(
                 include_top=False,
                 pooling='avg',
                 )
+        model_cnn.trainable = False #Prevenst coeficients from changing in first iteration.
 
-        # freeze the base model and create a new model.
-        model_cnn.trainable = False #Prevent coeficients from changing in first iteration.
-        # This wrapper allows to apply a layer to every temporal slice of an input,  tf.keras.layers.TimeDistributed()() 
-        X2_cnn_tdist = tf.keras.layers.TimeDistributed(model_cnn, name='X2_cnn_tdist')(X1_preprocess,mask=mask_input) 
+        X2_cnn_tdist = layers.TimeDistributed(model_cnn, name='X2_cnn_tdist')(X1_preprocess,mask=mask_input) 
 
-        # SCALE
-        # Adds a first dropout layer to the TimeDistributed() layer
-        X3_drop_scale = tf.keras.layers.Dropout(X3_dropout_rate, name='X3_drop_scale')(X2_cnn_tdist)
+        X3_drop = layers.Dropout(X3_dropout_rate, name='X3_drop')(X2_cnn_tdist)
 
-        #Adds recurrent layer
-        X4_model_rnn_scale = get_rnn(rnn_type,rnn_units,'X4_model_rnn_scale')(X3_drop_scale)
+        X4_model_rnn = get_rnn(rnn_type,rnn_units)(X3_drop)
 
-        # Adds a second dropout layer for regularization,
-        X5_drop2_scale = tf.keras.layers.Dropout(X4_dropout_rate, name='X5_drop2_scale')(X4_model_rnn_scale)
+        X5_drop2 = layers.Dropout(X4_dropout_rate, name='X5_drop2')(X4_model_rnn)
 
 
-        # MOVEMENT
-        # Adds a first dropout layer to the TimeDistributed() layer
-        X3_drop_move = tf.keras.layers.Dropout(X3_dropout_rate, name='X3_drop_move')(X2_cnn_tdist)
-        #Adds recurrent layer
-        X4_model_rnn_move = get_rnn(rnn_type,rnn_units,'X4_model_rnn_move')(X3_drop_move)
-        # Adds a second dropout layer for regularization.
-        X5_drop2_move = tf.keras.layers.Dropout(X4_dropout_rate, name='X5_drop2_move')(X4_model_rnn_move)
-
-
-        # Add the classification layer here, use keras.layers.Dense() and `classes` parameter for scale and movement.
-        # Assign it to `outputs` variable
-        #outputs = tf.keras.layers.Dense(classes, kernel_regularizer='l2',activation='softmax')(x) 
-        outputs_scale = tf.keras.layers.Dense(scale_classes, 
+        outputs_scale = layers.Dense(scale_classes, 
                 kernel_regularizer=regularizers.L1L2(l1=1e-5, l2=1e-4),
                 bias_regularizer=regularizers.L2(1e-4),
                 activity_regularizer=regularizers.L2(1e-5), 
                 activation='softmax',
-                name='outputs_scale')(X5_drop2_scale)
+                name='outputs_scale')(X5_drop2)
 
-        outputs_move = tf.keras.layers.Dense(move_classes, 
+        outputs_move = layers.Dense(move_classes, 
                 kernel_regularizer=regularizers.L1L2(l1=1e-5, l2=1e-4),
                 bias_regularizer=regularizers.L2(1e-4),
                 activity_regularizer=regularizers.L2(1e-5), 
                 activation='softmax',
-                name='outputs_move')(X5_drop2_move)
+                name='outputs_move')(X5_drop2)
 
-        model = tf.keras.Model([input_l, mask_input], [outputs_scale,outputs_move])
+        model = Model([input_l, mask_input], [outputs_scale,outputs_move])
     
     else: 
-        #load our already defined and finetuned model
-        # Assign it to `model` variable
-        model = tf.keras.models.load_model(weights)
+
+        model = load_model(weights)
         model.trainable = True
 
     return model
